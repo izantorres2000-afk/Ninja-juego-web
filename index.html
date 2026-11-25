@@ -1,0 +1,254 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Ninjas</title>
+<style>
+  /* Una sola pantalla oscura, como la pantalla de carga del juego: franja del color del fuego y título grande. */
+  :root {
+    --tinta: #0f0d12;
+    --tinta-2: #1b1720;
+    --papel: #f1ece4;
+    --papel-suave: rgba(241, 236, 228, 0.62);
+    --fuego: #e2532c;
+    --fuego-claro: #f08a5d;
+    --display: "Zen Antique", "Hiragino Mincho ProN", Georgia, serif;
+    --texto: "Zen Kaku Gothic New", system-ui, -apple-system, "Segoe UI", sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--tinta);
+    color: var(--papel);
+    font-family: var(--texto);
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  [hidden] { display: none !important; }
+  #canvas {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+    background: #000;
+  }
+  #canvas:focus { outline: none; }
+  /* (24 nov, Endika: «que pueda moverme y deslizar la cámara a la vez») con dos dedos Safari intentaba hacer
+     zoom o desplazar la página y cortaba el segundo toque: el lienzo se queda con todos los dedos */
+  #canvas { touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+  #portada {
+    position: fixed; inset: 0;
+    display: grid;
+    place-items: center;
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+    background:
+      linear-gradient(rgba(15, 13, 18, 0.35), rgba(15, 13, 18, 0.88) 62%),
+      url("portada.jpg") center top / cover no-repeat,
+      linear-gradient(var(--tinta), var(--tinta-2));
+    z-index: 2;
+    overflow-y: auto;
+  }
+  .bloque {
+    width: min(100%, 34rem);
+    display: grid;
+    gap: 1.1rem;
+  }
+  .franja { height: 4px; width: 100%; background: var(--fuego); }
+  h1 {
+    font-family: var(--display);
+    font-weight: 400;
+    font-size: clamp(2.6rem, 9vw, 4.4rem);
+    line-height: 1;
+    margin: 0;
+    letter-spacing: 0.02em;
+    text-wrap: balance;
+  }
+  .lema { margin: 0; color: var(--papel-suave); font-size: 1.05rem; }
+  .elementos {
+    display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem;
+    margin: 0; padding: 0; list-style: none;
+    font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--papel-suave);
+  }
+  .elementos li::before {
+    content: ""; display: inline-block; width: 0.55rem; height: 0.55rem;
+    border-radius: 50%; margin-right: 0.4rem; vertical-align: 0.05rem;
+    background: var(--c);
+  }
+  button {
+    font: 700 1.15rem var(--texto);
+    letter-spacing: 0.08em;
+    color: var(--tinta);
+    background: var(--papel);
+    border: 0;
+    padding: 1rem 1.4rem;
+    cursor: pointer;
+    justify-self: start;
+    min-width: 12rem;
+  }
+  button:hover { background: var(--fuego-claro); }
+  button:focus-visible { outline: 3px solid var(--fuego); outline-offset: 3px; }
+  button:disabled { opacity: 0.5; cursor: progress; }
+  .bloque { width: min(100%, 22rem); margin-bottom: 12vh; }
+  .bloque { width: min(100%, 22rem); margin-bottom: 12vh; }
+  .barra { height: 6px; border-radius: 3px; overflow: hidden; border-radius: 3px; overflow: hidden; background: rgba(241, 236, 228, 0.12); }
+  .barra > div { height: 100%; width: 0%; background: var(--fuego); transition: width 0.2s; }
+  #estado { margin: 0; font-size: 0.95rem; color: var(--papel-suave); min-height: 1.4em; }
+  .ayuda {
+    margin: 0; font-size: 0.85rem; line-height: 1.6; color: var(--papel-suave);
+    border-top: 1px solid rgba(241, 236, 228, 0.14); padding-top: 0.9rem;
+  }
+  kbd {
+    font-family: var(--texto); font-size: 0.8rem;
+    border: 1px solid rgba(241, 236, 228, 0.3); padding: 0 0.3rem;
+  }
+  @media (orientation: portrait) {
+    #portada {
+      background:
+        linear-gradient(rgba(15, 13, 18, 0.25), rgba(15, 13, 18, 0.9) 58%),
+        url("portada_vertical.jpg") center top / cover no-repeat,
+        linear-gradient(var(--tinta), var(--tinta-2));
+    }
+  }
+  .bloque { align-self: end; }
+  @media (prefers-reduced-motion: reduce) { .barra > div { transition: none; } }
+</style>
+
+<canvas id="canvas" tabindex="0">Tu navegador no puede mostrar el juego.</canvas>
+
+<div id="portada">
+  <div class="bloque">
+    <div class="barra" aria-hidden="true"><div id="progreso"></div></div>
+    <p id="estado" role="status" hidden></p>
+    <button id="jugar" type="button" hidden>Reintentar</button>
+  </div>
+</div>
+<script>
+(function () {
+  const boton = document.getElementById('jugar');
+  const estado = document.getElementById('estado');
+  const barra = document.getElementById('progreso');
+  const portada = document.getElementById('portada');
+  const datos = {};
+  const PARTES = ['datos_juego_1.js?v=c4a769f411', 'datos_juego_2.js?v=c4a769f411', 'datos_juego_3.js?v=c4a769f411', 'datos_juego_4.js?v=c4a769f411', 'datos_juego_5.js?v=c4a769f411', 'datos_juego_6.js?v=c4a769f411', 'datos_juego_7.js?v=c4a769f411', 'datos_juego_8.js?v=c4a769f411', 'datos_juego_9.js?v=c4a769f411', 'datos_juego_10.js?v=c4a769f411', 'datos_juego_11.js?v=c4a769f411', 'datos_juego_12.js?v=c4a769f411', 'datos_juego_13.js?v=c4a769f411', 'datos_juego_14.js?v=c4a769f411', 'datos_juego_15.js?v=c4a769f411', 'datos_juego_16.js?v=c4a769f411'];
+
+  function poner(p, texto) {
+    barra.style.width = Math.round(p * 100) + '%';
+
+  }
+
+  function cargarScript(src) {
+    return new Promise((ok, mal) => {
+      const s = document.createElement('script');
+      s.src = src;
+      // (13 nov: una vez ejecutado, el <script> se quita: el texto base64 de cada trozo, ~14 MB, se quedaba
+      // en memoria colgado del elemento y en el iPhone la página acababa cerrándose)
+      s.onload = () => { s.remove(); ok(); };
+      s.onerror = () => mal(new Error('No se pudo descargar ' + src + '. Recarga la página.'));
+      document.head.appendChild(s);
+    });
+  }
+
+  async function descomprimir(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const flujo = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Uint8Array(await new Response(flujo).arrayBuffer());
+  }
+
+  // El motor pide index.wasm e index.pck con fetch: se los damos ya descomprimidos.
+  const fetchOriginal = window.fetch.bind(window);
+  window.fetch = function (recurso, opciones) {
+    const url = typeof recurso === 'string' ? recurso : (recurso && recurso.url) || '';
+    if (url.endsWith('index.wasm') && datos.wasm) {
+      return Promise.resolve(new Response(datos.wasm, { headers: { 'Content-Type': 'application/wasm', 'Content-Length': String(datos.wasm.length) } }));
+    }
+    if (url.endsWith('index.pck') && datos.pck) {
+      return Promise.resolve(new Response(datos.pck, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(datos.pck.length) } }));
+    }
+    return fetchOriginal(recurso, opciones);
+  };
+
+  async function empezar() {
+    boton.hidden = true; estado.hidden = true;
+    try {
+      if (typeof DecompressionStream === 'undefined') {
+        throw new Error('Este navegador es demasiado antiguo. Actualiza Safari o Chrome y vuelve a intentarlo.');
+      }
+      poner(0.05, 'Descargando el motor del juego…');
+      await cargarScript('motor.js');
+      poner(0.12, 'Descargando el mundo…');
+      let hechos = 0; const todos = ['datos_motor.js'].concat(PARTES);
+      await Promise.all(todos.map(f => cargarScript(f).then(() => { hechos++; poner(0.12 + 0.43 * hechos / todos.length); })));
+      poner(0.55, 'Preparando…');
+      datos.wasm = await descomprimir(window.__NINJA_WASM);
+      window.__NINJA_WASM = null;
+      // (13 nov: antes se juntaban los 11 trozos en un texto enorme y se descodificaba de golpe: en el
+      // iPhone eso eran varios cientos de MB a la vez. Ahora cada trozo se pasa a bytes y se suelta.)
+      const trozos = [];
+      for (let i = 0; i < PARTES.length; i++) {
+        const bin = atob(window['__NINJA_PCK_' + (i + 1)]);
+        window['__NINJA_PCK_' + (i + 1)] = null;
+        const u = new Uint8Array(bin.length);
+        for (let k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+        trozos.push(u);
+      }
+      const flujoPck = new Blob(trozos).stream().pipeThrough(new DecompressionStream('gzip'));
+      trozos.length = 0;
+      datos.pck = new Uint8Array(await new Response(flujoPck).arrayBuffer());
+      poner(0.7, 'Arrancando…');
+
+      const faltan = Engine.getMissingFeatures({ threads: false });
+      if (faltan.length) throw new Error('Tu navegador no tiene: ' + faltan.join(', '));
+
+      const engine = new Engine({
+        args: [],
+        canvas: document.getElementById('canvas'),
+        canvasResizePolicy: 2,
+        executable: 'index',
+        experimentalVK: true,
+        fileSizes: { 'index.pck': datos.pck.length, 'index.wasm': datos.wasm.length },
+        focusCanvas: true,
+        gdextensionLibs: [],
+      });
+      await engine.startGame({
+        onProgress: (actual, total) => { if (total > 0) poner(0.7 + 0.3 * (actual / total)); },
+      });
+      portada.hidden = true;
+      // (13 nov: el juego ya tiene sus archivos dentro; las copias de aquí solo ocupaban memoria y en el
+      // móvil la página acababa cerrándose con «Algo ha salido mal»)
+      datos.pck = null;
+      datos.wasm = null;
+      window.fetch = fetchOriginal;
+      document.getElementById('canvas').focus();
+    } catch (err) {
+      console.error(err);
+      poner(0);
+      estado.textContent = err && err.message ? err.message : 'No se pudo arrancar el juego.';
+      estado.hidden = false;
+      boton.hidden = false;
+    }
+  }
+
+  // Armaduras bajo demanda (16 nov, scripts/personajes/armaduras_web.gd): cada estilo es un archivo
+  // aparte con window.__A="<pck en base64>"; el juego lo pide al ponértela y recibe el base64.
+  window.__NINJA_ARMADURAS = {"amaterasu_chica": "armaduras/amaterasu_chica.js", "amaterasu_chico": "armaduras/amaterasu_chico.js", "ashigaru_chica": "armaduras/ashigaru_chica.js", "ashigaru_chico": "armaduras/ashigaru_chico.js", "bambu_chica": "armaduras/bambu_chica.js", "bambu_chico": "armaduras/bambu_chico.js", "bandido_chica": "armaduras/bandido_chica.js", "bandido_chico": "armaduras/bandido_chico.js", "bronce_chica": "armaduras/bronce_chica.js", "bronce_chico": "armaduras/bronce_chico.js", "campesino_chica": "armaduras/campesino_chica.js", "campesino_chico": "armaduras/campesino_chico.js", "cazador_chica": "armaduras/cazador_chica.js", "cazador_chico": "armaduras/cazador_chico.js", "cobre_chica": "armaduras/cobre_chica.js", "cobre_chico": "armaduras/cobre_chico.js", "corsario_chica": "armaduras/corsario_chica.js", "corsario_chico": "armaduras/corsario_chico.js", "daimyo_chica": "armaduras/daimyo_chica.js", "daimyo_chico": "armaduras/daimyo_chico.js", "damasco_chica": "armaduras/damasco_chica.js", "damasco_chico": "armaduras/damasco_chico.js", "entrenamiento_chica": "armaduras/entrenamiento_chica.js", "entrenamiento_chico": "armaduras/entrenamiento_chico.js", "fujin_chica": "armaduras/fujin_chica.js", "fujin_chico": "armaduras/fujin_chico.js", "glaciar_chica": "armaduras/glaciar_chica.js", "glaciar_chico": "armaduras/glaciar_chico.js", "hierro_chica": "armaduras/hierro_chica.js", "hierro_chico": "armaduras/hierro_chico.js", "hoo_chica": "armaduras/hoo_chica.js", "hoo_chico": "armaduras/hoo_chico.js", "jade_chica": "armaduras/jade_chica.js", "jade_chico": "armaduras/jade_chico.js", "kabuki_chica": "armaduras/kabuki_chica.js", "kabuki_chico": "armaduras/kabuki_chico.js", "kagutsuchi_chica": "armaduras/kagutsuchi_chica.js", "kagutsuchi_chico": "armaduras/kagutsuchi_chico.js", "kirin_chica": "armaduras/kirin_chica.js", "kirin_chico": "armaduras/kirin_chico.js", "kitsune_chica": "armaduras/kitsune_chica.js", "kitsune_chico": "armaduras/kitsune_chico.js", "laca_chica": "armaduras/laca_chica.js", "laca_chico": "armaduras/laca_chico.js", "marfil_chica": "armaduras/marfil_chica.js", "marfil_chico": "armaduras/marfil_chico.js", "obsidiana_chica": "armaduras/obsidiana_chica.js", "obsidiana_chico": "armaduras/obsidiana_chico.js", "oni_chica": "armaduras/oni_chica.js", "oni_chico": "armaduras/oni_chico.js", "oyamatsumi_chica": "armaduras/oyamatsumi_chica.js", "oyamatsumi_chico": "armaduras/oyamatsumi_chico.js", "pararrayos_chica": "armaduras/pararrayos_chica.js", "pararrayos_chico": "armaduras/pararrayos_chico.js", "pavonado_chica": "armaduras/pavonado_chica.js", "pavonado_chico": "armaduras/pavonado_chico.js", "pescador_chica": "armaduras/pescador_chica.js", "pescador_chico": "armaduras/pescador_chico.js", "plata_chica": "armaduras/plata_chica.js", "plata_chico": "armaduras/plata_chico.js", "raijin_chica": "armaduras/raijin_chica.js", "raijin_chico": "armaduras/raijin_chico.js", "raiz_chica": "armaduras/raiz_chica.js", "raiz_chico": "armaduras/raiz_chico.js", "ryujin_chica": "armaduras/ryujin_chica.js", "ryujin_chico": "armaduras/ryujin_chico.js", "sakura_chica": "armaduras/sakura_chica.js", "sakura_chico": "armaduras/sakura_chico.js", "samurai_chica": "armaduras/samurai_chica.js", "samurai_chico": "armaduras/samurai_chico.js", "shinobi_chica": "armaduras/shinobi_chica.js", "shinobi_chico": "armaduras/shinobi_chico.js", "sohei_chica": "armaduras/sohei_chica.js", "sohei_chico": "armaduras/sohei_chico.js", "templado_chica": "armaduras/templado_chica.js", "templado_chico": "armaduras/templado_chico.js", "tengu_chica": "armaduras/tengu_chica.js", "tengu_chico": "armaduras/tengu_chico.js", "tormenta_chica": "armaduras/tormenta_chica.js", "tormenta_chico": "armaduras/tormenta_chico.js", "tsukuyomi_chica": "armaduras/tsukuyomi_chica.js", "tsukuyomi_chico": "armaduras/tsukuyomi_chico.js", "veterano_chica": "armaduras/veterano_chica.js", "veterano_chico": "armaduras/veterano_chico.js", "volcan_chica": "armaduras/volcan_chica.js", "volcan_chico": "armaduras/volcan_chico.js", "wako_chica": "armaduras/wako_chica.js", "wako_chico": "armaduras/wako_chico.js", "watatsumi_chica": "armaduras/watatsumi_chica.js", "watatsumi_chico": "armaduras/watatsumi_chico.js", "yomi_chica": "armaduras/yomi_chica.js", "yomi_chico": "armaduras/yomi_chico.js", "yukionna_chica": "armaduras/yukionna_chica.js", "yukionna_chico": "armaduras/yukionna_chico.js", "yurei_chica": "armaduras/yurei_chica.js", "yurei_chico": "armaduras/yurei_chico.js"};
+  window.ninjaDescargar = function (url, hecho) {
+    fetchOriginal(url, { credentials: 'same-origin' })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(t => { const a = t.indexOf('"'), b = t.lastIndexOf('"'); hecho(a >= 0 && b > a ? t.slice(a + 1, b) : ''); })
+      .catch(e => { console.error('Armadura no descargada: ' + url + ' ' + e); hecho(''); });
+  };
+
+  boton.addEventListener('click', empezar);
+  empezar();
+})();
+</script>
+
+<script>
+  for (const ev of ["gesturestart", "gesturechange", "gestureend"]) {
+    document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+  }
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+</script>
